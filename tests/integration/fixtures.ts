@@ -8,6 +8,7 @@
  * - Cleanup registry for test-created resources
  */
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { SafeguardClient } from '../../src/client.js';
 import { PasswordAuth } from '../../src/auth/password.js';
 import { NodeHttpClient } from '../../src/http/node.js';
@@ -39,6 +40,7 @@ export async function createAdminClient(env: IntegrationEnv): Promise<SafeguardC
 
   const httpClient = new NodeHttpClient({
     rejectUnauthorized: env.verify,
+    ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}),
   });
   client.setHttpClient(httpClient);
   await client.connect();

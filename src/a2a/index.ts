@@ -78,7 +78,9 @@ export class A2AClient {
    */
   async retrievePassword(apiKey: string): Promise<SecretValue> {
     const body = await this.#a2aRequest(apiKey, 'GET', 'Credentials', { type: 'Password' });
-    return new SecretValue(body);
+    // The appliance returns the credential as a JSON string (e.g. `"secret"`);
+    // decode it so callers get the raw value, not a quoted string.
+    return new SecretValue(JSON.parse(body) as string);
   }
 
   /**
@@ -88,11 +90,14 @@ export class A2AClient {
    */
   async retrievePrivateKey(apiKey: string, format?: SshKeyFormat): Promise<SecretValue> {
     const keyType = format ?? SshKeyFormat.OpenSsh;
+    // The A2ACredentialType enum is Password|PrivateKey|ApiKey|File; there is no
+    // "SshKey" value, so an SSH private key is requested as type=PrivateKey with
+    // the desired serialization passed via keyFormat.
     const body = await this.#a2aRequest(apiKey, 'GET', 'Credentials', {
-      type: 'SshKey',
+      type: 'PrivateKey',
       keyFormat: keyType,
     });
-    return new SecretValue(body);
+    return new SecretValue(JSON.parse(body) as string);
   }
 
   /**
@@ -106,22 +111,45 @@ export class A2AClient {
 
   /**
    * Get the list of retrievable accounts available to this certificate.
+   *
+   * Retrievable accounts live under the Core service and are authorized by the
+   * client certificate alone (no per-account API key). Enumerate every A2A
+   * registration bound to the certificate, then collect each registration's
+   * retrievable accounts.
    */
   async getRetrievableAccounts(): Promise<RetrievableAccount[]> {
     this.#ensureHttpClient();
-    const response = await this.#httpClient!.request({
-      url: `https://${this.#host}/service/a2a/${this.#apiVersion}/A2ARegistrations`,
+    const regResponse = await this.#httpClient!.request({
+      url: `https://${this.#host}/service/core/${this.#apiVersion}/A2ARegistrations`,
       method: 'GET',
       headers: {
         Accept: 'application/json',
       },
     });
 
-    if (response.status !== 200) {
-      throw ApiError.fromResponse(response.status, response.body);
+    if (regResponse.status !== 200) {
+      throw ApiError.fromResponse(regResponse.status, regResponse.body);
     }
 
-    return JSON.parse(response.body) as RetrievableAccount[];
+    const registrations = JSON.parse(regResponse.body) as Array<{ Id: number }>;
+    const accounts: RetrievableAccount[] = [];
+    for (const reg of registrations) {
+      const acctResponse = await this.#httpClient!.request({
+        url: `https://${this.#host}/service/core/${this.#apiVersion}/A2ARegistrations/${reg.Id}/RetrievableAccounts`,
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      if (acctResponse.status !== 200) {
+        throw ApiError.fromResponse(acctResponse.status, acctResponse.body);
+      }
+
+      accounts.push(...(JSON.parse(acctResponse.body) as RetrievableAccount[]));
+    }
+
+    return accounts;
   }
 
   /**
@@ -132,7 +160,7 @@ export class A2AClient {
   async setPassword(apiKey: string, password: string): Promise<void> {
     this.#ensureHttpClient();
     const response = await this.#httpClient!.request({
-      url: `https://${this.#host}/service/a2a/${this.#apiVersion}/Credentials?type=Password`,
+      url: `https://${this.#host}/service/a2a/${this.#apiVersion}/Credentials/Password`,
       method: 'PUT',
       headers: {
         Authorization: `A2A ${apiKey}`,
@@ -162,11 +190,15 @@ export class A2AClient {
   ): Promise<void> {
     this.#ensureHttpClient();
     const keyFormat = format ?? SshKeyFormat.OpenSsh;
-    const payload: Record<string, string> = { PrivateKey: key, KeyFormat: keyFormat };
+    // SSH keys are set on the dedicated Credentials/SshKey sub-path (mirroring
+    // Credentials/Password), not via a type query param. The body is an
+    // AccountSshKey ({ PrivateKey, Passphrase }); it does not accept a KeyFormat
+    // property, so the serialization is passed as a query parameter instead.
+    const payload: Record<string, string> = { PrivateKey: key };
     if (passphrase) payload['Passphrase'] = passphrase;
 
     const response = await this.#httpClient!.request({
-      url: `https://${this.#host}/service/a2a/${this.#apiVersion}/Credentials?type=SshKey`,
+      url: `https://${this.#host}/service/a2a/${this.#apiVersion}/Credentials/SshKey?keyFormat=${keyFormat}`,
       method: 'PUT',
       headers: {
         Authorization: `A2A ${apiKey}`,
