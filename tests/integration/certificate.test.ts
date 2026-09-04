@@ -50,6 +50,29 @@ describe('Certificate Authentication', () => {
       pfx,
       passphrase: CERT_PASSWORD,
       rejectUnauthorized: env.verify,
+      ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}),
+    });
+    client.setHttpClient(httpClient);
+    await client.connect();
+    return client;
+  }
+
+  /**
+   * Connect to a Cert SNI hostname pinning `minVersion: 'TLSv1.3'`. The pin
+   * disables the client-cert auto-cap to TLS 1.2, so the handshake must
+   * negotiate TLS 1.3 or fail outright — a successful authenticated call is
+   * therefore proof that certificate auth completed over TLS 1.3.
+   */
+  async function connectWithCertSni(sniHost: string): Promise<SafeguardClient> {
+    const pfx = readFileSync(certPaths().userPfx);
+    const auth = new CertificateAuth({ pfx, passphrase: CERT_PASSWORD });
+    const client = new SafeguardClient(sniHost, { auth, verify: env.verify });
+    const httpClient = new NodeHttpClient({
+      pfx,
+      passphrase: CERT_PASSWORD,
+      rejectUnauthorized: env.verify,
+      minVersion: 'TLSv1.3',
+      ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}),
     });
     client.setHttpClient(httpClient);
     await client.connect();
@@ -80,4 +103,20 @@ describe('Certificate Authentication', () => {
       await client.disconnect();
     }
   });
+
+  // TLS 1.3 certificate auth via a Cert SNI hostname. Requires an admin-configured
+  // Cert SNI binding on the appliance; skips unless SPP_CERT_SNI_HOST is set.
+  it.skipIf(!env.certSniHost)(
+    'authenticates with a client certificate over TLS 1.3 (Cert SNI)',
+    async () => {
+      const client = await connectWithCertSni(env.certSniHost!);
+      try {
+        const me = await client.get<{ Id: number; Name: string }>(Service.CORE, 'Me');
+        expect(me.Name).toBe(certUserName);
+        expect(me.Id).toBe(certUserId);
+      } finally {
+        await client.disconnect();
+      }
+    },
+  );
 });

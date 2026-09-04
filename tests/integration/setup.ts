@@ -18,6 +18,13 @@ export interface IntegrationEnv {
   keyPassphrase?: string;
   a2aApiKey?: string;
   externalProvider?: string;
+  /**
+   * Optional Cert SNI hostname (SPP 9.0+) whose SSL binding supports
+   * certificate authentication over TLS 1.3. When unset, the TLS 1.3 Cert SNI
+   * tests skip — this binding must be configured on the appliance by an admin
+   * and is not present by default.
+   */
+  certSniHost?: string;
   verify: boolean;
 }
 
@@ -43,6 +50,7 @@ export function getIntegrationEnv(): IntegrationEnv | undefined {
   if (process.env.SPP_KEY_PASSPHRASE) env.keyPassphrase = process.env.SPP_KEY_PASSPHRASE;
   if (process.env.SPP_A2A_API_KEY) env.a2aApiKey = process.env.SPP_A2A_API_KEY;
   if (process.env.SPP_EXTERNAL_PROVIDER) env.externalProvider = process.env.SPP_EXTERNAL_PROVIDER;
+  if (process.env.SPP_CERT_SNI_HOST) env.certSniHost = process.env.SPP_CERT_SNI_HOST;
 
   return env;
 }
