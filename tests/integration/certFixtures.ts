@@ -142,7 +142,10 @@ export async function createOpsAdminClient(
     auth: new PasswordAuth({ username: name, password, provider: env.provider }),
     verify: env.verify,
   });
-  client.setHttpClient(new NodeHttpClient({ rejectUnauthorized: env.verify }));
+  client.setHttpClient(new NodeHttpClient({
+    rejectUnauthorized: env.verify,
+    ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}),
+  }));
   await client.connect();
   return client;
 }

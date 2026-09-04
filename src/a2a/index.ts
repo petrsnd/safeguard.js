@@ -90,8 +90,11 @@ export class A2AClient {
    */
   async retrievePrivateKey(apiKey: string, format?: SshKeyFormat): Promise<SecretValue> {
     const keyType = format ?? SshKeyFormat.OpenSsh;
+    // The A2ACredentialType enum is Password|PrivateKey|ApiKey|File; there is no
+    // "SshKey" value, so an SSH private key is requested as type=PrivateKey with
+    // the desired serialization passed via keyFormat.
     const body = await this.#a2aRequest(apiKey, 'GET', 'Credentials', {
-      type: 'SshKey',
+      type: 'PrivateKey',
       keyFormat: keyType,
     });
     return new SecretValue(JSON.parse(body) as string);
@@ -187,11 +190,15 @@ export class A2AClient {
   ): Promise<void> {
     this.#ensureHttpClient();
     const keyFormat = format ?? SshKeyFormat.OpenSsh;
-    const payload: Record<string, string> = { PrivateKey: key, KeyFormat: keyFormat };
+    // SSH keys are set on the dedicated Credentials/SshKey sub-path (mirroring
+    // Credentials/Password), not via a type query param. The body is an
+    // AccountSshKey ({ PrivateKey, Passphrase }); it does not accept a KeyFormat
+    // property, so the serialization is passed as a query parameter instead.
+    const payload: Record<string, string> = { PrivateKey: key };
     if (passphrase) payload['Passphrase'] = passphrase;
 
     const response = await this.#httpClient!.request({
-      url: `https://${this.#host}/service/a2a/${this.#apiVersion}/Credentials?type=SshKey`,
+      url: `https://${this.#host}/service/a2a/${this.#apiVersion}/Credentials/SshKey?keyFormat=${keyFormat}`,
       method: 'PUT',
       headers: {
         Authorization: `A2A ${apiKey}`,

@@ -44,7 +44,7 @@ describe('A2AClient', () => {
     const call = (httpClient.request as ReturnType<typeof vi.fn>).mock.calls[0]![0];
 
     expect(call.url).toBe(
-      'https://appliance.example.com/service/a2a/v4/Credentials?type=SshKey&keyFormat=OpenSsh',
+      'https://appliance.example.com/service/a2a/v4/Credentials?type=PrivateKey&keyFormat=OpenSsh',
     );
   });
 
@@ -88,18 +88,19 @@ describe('A2AClient', () => {
     expect(call.body).toBe('"NewPassword123"');
   });
 
-  it('sets private keys with the credential type in the query string', async () => {
+  it('sets private keys on the SshKey sub-path', async () => {
     const updateClient = createMockHttpClient('', 204);
     client.setHttpClient(updateClient);
 
     await client.setPrivateKey('api-key', 'PRIVATE KEY', 'passphrase', SshKeyFormat.Putty);
     const call = (updateClient.request as ReturnType<typeof vi.fn>).mock.calls[0]![0];
 
-    expect(call.url).toBe('https://appliance.example.com/service/a2a/v4/Credentials?type=SshKey');
+    expect(call.url).toBe(
+      'https://appliance.example.com/service/a2a/v4/Credentials/SshKey?keyFormat=Putty',
+    );
     expect(call.method).toBe('PUT');
     expect(JSON.parse(call.body as string)).toEqual({
       PrivateKey: 'PRIVATE KEY',
-      KeyFormat: 'Putty',
       Passphrase: 'passphrase',
     });
   });
