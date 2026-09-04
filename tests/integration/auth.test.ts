@@ -5,6 +5,7 @@
  * for bad credentials against a live Safeguard appliance.
  */
 import { describe, it, expect, afterAll } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { requireAppliance } from './setup.js';
 import { createAdminClient } from './fixtures.js';
 import { SafeguardClient } from '../../src/client.js';
@@ -56,7 +57,7 @@ describe('Authentication', () => {
         }),
         verify: env.verify,
       });
-      client.setHttpClient(new NodeHttpClient({ rejectUnauthorized: env.verify }));
+      client.setHttpClient(new NodeHttpClient({ rejectUnauthorized: env.verify, ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}) }));
 
       // RSTS returns 400 for bad credentials (not 401), so auth throws ApiError
       await expect(client.connect()).rejects.toThrow();
@@ -71,7 +72,7 @@ describe('Authentication', () => {
         }),
         verify: env.verify,
       });
-      client.setHttpClient(new NodeHttpClient({ rejectUnauthorized: env.verify }));
+      client.setHttpClient(new NodeHttpClient({ rejectUnauthorized: env.verify, ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}) }));
 
       await expect(client.connect()).rejects.toThrow();
     });
@@ -98,7 +99,7 @@ describe('Authentication', () => {
         }),
         verify: env.verify,
       });
-      freshClient.setHttpClient(new NodeHttpClient({ rejectUnauthorized: env.verify }));
+      freshClient.setHttpClient(new NodeHttpClient({ rejectUnauthorized: env.verify, ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}) }));
       await freshClient.connect();
 
       // Now use the token lifetime to verify it's valid

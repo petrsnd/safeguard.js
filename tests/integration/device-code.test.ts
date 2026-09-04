@@ -11,6 +11,7 @@
  * Auto-skips when SPP_HOST is not configured.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { requireAppliance } from './setup.js';
 import { createAdminClient } from './fixtures.js';
 import { SafeguardClient } from '../../src/client.js';
@@ -63,7 +64,7 @@ function withoutDeviceCode(value: string): string {
 
 function newDeviceCodeClient(auth: DeviceCodeAuth): SafeguardClient {
   const client = new SafeguardClient(env.host, { auth, verify: env.verify });
-  client.setHttpClient(new NodeHttpClient({ rejectUnauthorized: env.verify }));
+  client.setHttpClient(new NodeHttpClient({ rejectUnauthorized: env.verify, ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}) }));
   return client;
 }
 

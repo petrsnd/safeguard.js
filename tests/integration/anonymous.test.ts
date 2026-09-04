@@ -5,6 +5,7 @@
  * the NodeHttpClient works without auth headers.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { requireAppliance } from './setup.js';
 import { NodeHttpClient } from '../../src/http/node.js';
 
@@ -12,7 +13,7 @@ const env = requireAppliance();
 
 describe('Anonymous Operations', () => {
   it('reads notification status without auth', async () => {
-    const http = new NodeHttpClient({ rejectUnauthorized: env.verify });
+    const http = new NodeHttpClient({ rejectUnauthorized: env.verify, ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}) });
     const response = await http.request({
       url: `https://${env.host}/service/notification/v4/Status`,
       method: 'GET',
@@ -25,7 +26,7 @@ describe('Anonymous Operations', () => {
   });
 
   it('reads authentication providers without auth', async () => {
-    const http = new NodeHttpClient({ rejectUnauthorized: env.verify });
+    const http = new NodeHttpClient({ rejectUnauthorized: env.verify, ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}) });
     const response = await http.request({
       url: `https://${env.host}/service/core/v4/AuthenticationProviders`,
       method: 'GET',
@@ -39,7 +40,7 @@ describe('Anonymous Operations', () => {
   });
 
   it('reads RSTS login page without auth', async () => {
-    const http = new NodeHttpClient({ rejectUnauthorized: env.verify });
+    const http = new NodeHttpClient({ rejectUnauthorized: env.verify, ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}) });
     const response = await http.request({
       url: `https://${env.host}/RSTS/Login`,
       method: 'GET',
@@ -51,7 +52,7 @@ describe('Anonymous Operations', () => {
   });
 
   it('gets 401 from authenticated endpoint without token', async () => {
-    const http = new NodeHttpClient({ rejectUnauthorized: env.verify });
+    const http = new NodeHttpClient({ rejectUnauthorized: env.verify, ...(env.caFile ? { ca: readFileSync(env.caFile) } : {}) });
     const response = await http.request({
       url: `https://${env.host}/service/core/v4/Me`,
       method: 'GET',

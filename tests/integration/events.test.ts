@@ -9,6 +9,8 @@
  * which is too invasive for a smoke-level integration test.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
+import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import * as signalR from '@microsoft/signalr';
 import { requireAppliance } from './setup.js';
 import { SafeguardEventListener } from '../../src/events/index.js';
@@ -22,17 +24,48 @@ const env = requireAppliance();
 /** The correct SignalR hub URL for Safeguard event notifications. */
 const SIGNALR_HUB_PATH = '/service/event/signalr';
 
+// ws (7.x) ships no bundled types and @types/ws isn't installed; load it via
+// require and describe only the construct signature we use.
+type WsConstructor = new (
+  address: string,
+  protocols: undefined,
+  options: Record<string, unknown>,
+) => object;
+const WsWebSocket = createRequire(import.meta.url)('ws') as WsConstructor;
+
 /**
  * Build a SignalR HubConnection to the Safeguard event hub.
+ *
+ * TLS options are wired directly into the WebSocket transport rather than via
+ * the global NODE_TLS_REJECT_UNAUTHORIZED env var: under the serial integration
+ * runner a global mutation would leak and silently disable server verification
+ * for every test file that runs afterward. Using WebSockets with
+ * skipNegotiation avoids the node-fetch negotiate step, so the only TLS
+ * connection is the one whose CA / rejectUnauthorized we control here.
  */
 function buildSignalRConnection(host: string, accessToken: string): signalR.HubConnection {
-  // Disable TLS verification for self-signed certs in test
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   const url = `https://${host}${SIGNALR_HUB_PATH}`;
+  const ca = env.caFile ? readFileSync(env.caFile) : undefined;
+
+  class TlsWebSocket extends WsWebSocket {
+    constructor(address: string, protocols: undefined, options: Record<string, unknown>) {
+      super(address, protocols, {
+        ...options,
+        rejectUnauthorized: env.verify,
+        ...(ca ? { ca } : {}),
+      });
+    }
+  }
+
+  const options = {
+    accessTokenFactory: () => accessToken,
+    transport: signalR.HttpTransportType.WebSockets,
+    skipNegotiation: true,
+    WebSocket: TlsWebSocket,
+  } as unknown as signalR.IHttpConnectionOptions;
+
   return new signalR.HubConnectionBuilder()
-    .withUrl(url, {
-      accessTokenFactory: () => accessToken,
-    })
+    .withUrl(url, options)
     .configureLogging(signalR.LogLevel.None)
     .build();
 }
@@ -43,7 +76,10 @@ async function getAccessToken(e: IntegrationEnv): Promise<string> {
     password: e.password,
     provider: e.provider,
   });
-  const httpClient = new NodeHttpClient({ rejectUnauthorized: e.verify });
+  const httpClient = new NodeHttpClient({
+    rejectUnauthorized: e.verify,
+    ...(e.caFile ? { ca: readFileSync(e.caFile) } : {}),
+  });
   const storage = new MemoryStorage();
   const tokenSet = await auth.authenticate(e.host, httpClient, storage);
   httpClient.dispose?.();
