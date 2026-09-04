@@ -241,14 +241,18 @@ await client.delete(Service.CORE, `Users/${newUser.Id}`);
 ## A2A (Application to Application)
 
 ```typescript
-import { A2AClient, CertificateAuth } from '@oneidentity/safeguard';
+import { A2AClient, CertificateAuth, NodeHttpClient } from '@oneidentity/safeguard';
 
-const a2a = new A2AClient('safeguard.sample.corp', {
-  auth: new CertificateAuth({
-    certFile: 'client.pem',
-    keyFile: 'client.key',
-  }),
+const auth = new CertificateAuth({
+  certFile: 'client.pem',
+  keyFile: 'client.key',
 });
+const a2a = new A2AClient('safeguard.sample.corp', { auth });
+
+// A2A requires a client-cert HttpClient — it has no default and throws without one.
+// On SPP 9.0 this also auto-caps the connection at TLS 1.2 so certificate auth
+// works out of the box (see "TLS 1.3 and SPP 9.0").
+a2a.setHttpClient(new NodeHttpClient(auth.getTlsOptions()));
 
 // Retrieve a password
 const password = await a2a.retrievePassword(apiKey);
@@ -491,6 +495,37 @@ client.setHttpClient(
   new NodeHttpClient({ ...auth.getTlsOptions(), minVersion: 'TLSv1.3' }),
 );
 await client.connect();
+```
+
+#### A2A on SPP 9.0
+
+A2A retrieval and write-back authenticate with a **client certificate only** —
+there is no password/token alternative — so on SPP 9.0's Standard binding A2A is
+**always** subject to the same TLS 1.2 auto-cap as certificate auth. `A2AClient`
+has no default HTTP client, so wire a cert-configured `NodeHttpClient` through
+`setHttpClient` (the auto-cap and HTTP/1.1 pin both apply through it):
+
+```typescript
+import { A2AClient, CertificateAuth, NodeHttpClient } from '@oneidentity/safeguard';
+
+const auth = new CertificateAuth({ certFile: './client.pem', keyFile: './client.key' });
+const a2a = new A2AClient('safeguard.corp.example', { auth });
+
+// cert present + no version pin ⇒ NodeHttpClient caps at TLS 1.2 for you
+a2a.setHttpClient(new NodeHttpClient(auth.getTlsOptions()));
+const password = await a2a.retrievePassword(apiKey);
+```
+
+To run A2A over **TLS 1.3**, use the appliance's Cert SNI hostname and pin
+`minVersion: 'TLSv1.3'` (which disables the auto-cap), exactly as for
+certificate auth:
+
+```typescript
+const a2a = new A2AClient('cert-sni.safeguard.corp.example', { auth });
+a2a.setHttpClient(
+  new NodeHttpClient({ ...auth.getTlsOptions(), minVersion: 'TLSv1.3' }),
+);
+const password = await a2a.retrievePassword(apiKey);
 ```
 
 #### Pinning the TLS version (opt-in)
